@@ -7,7 +7,6 @@ router = Router()
 
 # ================= НАСТРОЙКИ =================
 
-# Фото (без антресоли / с антресолью)
 PHOTOS = {
     2: {"normal": "https://i.imgur.com/JqYQ5Zy.jpg", "ant": "https://i.imgur.com/JqYQ5Zy.jpg"},
     3: {"normal": "https://i.imgur.com/JqYQ5Zy.jpg", "ant": "https://i.imgur.com/JqYQ5Zy.jpg"},
@@ -16,7 +15,6 @@ PHOTOS = {
     6: {"normal": "https://i.imgur.com/JqYQ5Zy.jpg", "ant": "https://i.imgur.com/JqYQ5Zy.jpg"},
 }
 
-# Размеры
 SIZES = {
     2: {"h": 220, "w": 90, "d": 52},
     3: {"h": 220, "w": 135, "d": 52},
@@ -25,59 +23,51 @@ SIZES = {
     6: {"h": 220, "w": 270, "d": 52}
 }
 
-# Цены Турция/Рим БЕЗ антресоли (базовые)
-BASE_PRICES = {
-    2: 11000, 3: 14000, 4: 21000, 5: 24000, 6: 25000
-}
-
-# Цены Турция/Рим С антресолью
-BASE_PRICES_ANT = {
-    2: 15000, 3: 20000, 4: 29000, 5: 35000, 6: 37000
-}
-
-# 6 дверей 1 труба
+# Базовые цены (Турция/Рим)
+BASE_PRICES = {2: 11000, 3: 14000, 4: 21000, 5: 24000, 6: 25000}
+BASE_PRICES_ANT = {2: 15000, 3: 20000, 4: 29000, 5: 35000, 6: 37000}
 PRICES_6_1T = 27000
 PRICES_6_1T_ANT = 39000
 
-# Доплата за Айшу за 1 дверь
+# Айша: -1000 + (кол-во × 1000)
+AYSHA_BASE = -1000
 AYSHA_PER_DOOR = 1000
 
-# Ручки
 HANDLE_PRICES = {30: 0, 60: 700, 100: 1000}
 HANDLE_TYPES = ['Скоба', 'Плоская', 'Корона']
 HANDLE_COLORS = ['Чёрная', 'Серая', 'Золото']
 
 DRAWERS_PRICE = 2000
 
-COLORS = {'wh': 'Белый', 'gr': 'Серой', 'va': 'Ваниль', 'li': 'Лино', 'vt': 'Ватан'}
+COLORS = {'wh': 'Белый', 'gr': 'Серый', 'va': 'Ваниль', 'li': 'Лино', 'vt': 'Ватан'}
 DOORS = {'turk': 'Турция', 'rim': 'Рим', 'aysha': 'Айша'}
 
-# ================= ФУНКЦИИ =================
 
 def parse(data):
-    """m_двери_цвет_дверь_айшаКол_размерРучки_типРучки_цветРучки_трубы_ящики_антр"""
+    """m_двери_цвет_дверь_рамки_размерР_типР_цветР_трубы_ящики_антр"""
     p = data.split("_")
     return {
         'doors': int(p[1]),
         'color': p[2],
-        'door_type': p[3],
-        'aysha_count': int(p[4]),  # сколько дверей Айша (остальные = рамки или основной тип)
+        'door_type': p[3],      # turk/rim/aysha
+        'mirrors': int(p[4]),    # кол-во рамок
         'h_size': int(p[5]),
-        'h_type': int(p[6]),  # 0=Скоба, 1=Плоская, 2=Корона
-        'h_color': int(p[7]),  # 0=Чёрная, 1=Серая, 2=Золото
+        'h_type': int(p[6]),
+        'h_color': int(p[7]),
         'tubes': int(p[8]),
         'drawers': p[9] == '1',
         'antresol': p[10] == '1'
     }
 
-def code(doors, color, door, aysha_count, h_size, h_type, h_color, tubes, drawers, antresol):
-    return f"m_{doors}_{color}_{door}_{aysha_count}_{h_size}_{h_type}_{h_color}_{tubes}_{1 if drawers else 0}_{1 if antresol else 0}"
+
+def code(doors, color, door, mirrors, h_size, h_type, h_color, tubes, drawers, antresol):
+    return f"m_{doors}_{color}_{door}_{mirrors}_{h_size}_{h_type}_{h_color}_{tubes}_{1 if drawers else 0}_{1 if antresol else 0}"
+
 
 def calc_price(c):
-    """Расчёт цены"""
     doors = c['doors']
     door_type = c['door_type']
-    aysha_count = c['aysha_count']
+    mirrors = c['mirrors']
     h_size = c['h_size']
     tubes = c['tubes']
     drawers = c['drawers']
@@ -89,10 +79,12 @@ def calc_price(c):
     else:
         base = BASE_PRICES_ANT[doors] if antresol else BASE_PRICES[doors]
     
-    # Доплата за Айшу: просто количество дверей Айша × 1000₽
+    # Доплата за Айшу: -1000 + (кол-во Айша × 1000)
+    # Кол-во Айша = doors - mirrors (если тип Айша)
     aysha_extra = 0
     if door_type == 'aysha':
-        aysha_extra = aysha_count * AYSHA_PER_DOOR
+        aysha_doors = doors - mirrors  # сколько дверей Айша
+        aysha_extra = AYSHA_BASE + (aysha_doors * AYSHA_PER_DOOR)
     
     # Ручки
     handle_extra = HANDLE_PRICES[h_size] * doors
@@ -102,28 +94,35 @@ def calc_price(c):
     
     return int(base + aysha_extra + handle_extra + drawer_extra)
 
+
 def get_photo(c):
     return PHOTOS[c['doors']]["ant" if c['antresol'] else "normal"]
+
 
 def get_text(c, price):
     doors = c['doors']
     s = SIZES[doors]
     h = s['h'] + (50 if c['antresol'] else 0)
+    mirrors = c['mirrors']
+    door_type = c['door_type']
     
     # Текст дверей
-    aysha_count = c['aysha_count']
-    mirrors = doors - aysha_count if c['door_type'] == 'aysha' and aysha_count < doors else 0
-    
-    if c['door_type'] == 'aysha' and mirrors > 0:
-        door_text = f"{aysha_count}× Айша + {mirrors}× Рамка"
-        aysha_extra = aysha_count * AYSHA_PER_DOOR
-        door_text += f" (+{aysha_extra:,}₽)"
-    elif c['door_type'] == 'aysha':
-        door_text = f"{doors}× Айша (+{doors * AYSHA_PER_DOOR:,}₽)"
+    if mirrors > 0:
+        main_doors = doors - mirrors
+        door_text = f"{main_doors}× {DOORS[door_type]} + {mirrors}× Рамка"
     else:
-        door_text = f"{doors}× {DOORS[c['door_type']]}"
+        door_text = f"{doors}× {DOORS[door_type]}"
     
-    # Текст ручек
+    # Доплата за Айшу
+    if door_type == 'aysha':
+        aysha_doors = doors - mirrors
+        aysha_extra = AYSHA_BASE + (aysha_doors * AYSHA_PER_DOOR)
+        if aysha_extra > 0:
+            door_text += f" (+{aysha_extra:,}₽)"
+        elif aysha_extra < 0:
+            door_text += f" ({aysha_extra:,}₽)"
+    
+    # Ручки
     handle_text = f"{c['h_size']}см {HANDLE_TYPES[c['h_type']]} {HANDLE_COLORS[c['h_color']]}"
     handle_extra = HANDLE_PRICES[c['h_size']] * doors
     
@@ -167,7 +166,7 @@ async def milan_start(cb: CallbackQuery):
     buttons = []
     for d in [2, 3, 4, 5, 6]:
         buttons.append(
-            InlineKeyboardButton(text=f"{d} дв", callback_data=code(d, 'wh', 'turk', d, 30, 0, 0, 2, False, False))
+            InlineKeyboardButton(text=f"{d} дв", callback_data=code(d, 'wh', 'turk', 0, 30, 0, 0, 2, False, False))
         )
     
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -203,22 +202,22 @@ async def milan_show(cb: CallbackQuery):
         [
             InlineKeyboardButton(
                 text=f"{'✅' if c['antresol'] else '➕'} Антресоль",
-                callback_data=code(c['doors'], c['color'], c['door_type'], c['aysha_count'], c['h_size'], c['h_type'], c['h_color'], c['tubes'], c['drawers'], not c['antresol'])
+                callback_data=code(c['doors'], c['color'], c['door_type'], c['mirrors'], c['h_size'], c['h_type'], c['h_color'], c['tubes'], c['drawers'], not c['antresol'])
             ),
             InlineKeyboardButton(
                 text=f"{'✅' if c['drawers'] else '➕'} Ящики",
-                callback_data=code(c['doors'], c['color'], c['door_type'], c['aysha_count'], c['h_size'], c['h_type'], c['h_color'], c['tubes'], not c['drawers'], c['antresol'])
+                callback_data=code(c['doors'], c['color'], c['door_type'], c['mirrors'], c['h_size'], c['h_type'], c['h_color'], c['tubes'], not c['drawers'], c['antresol'])
             ),
         ],
         *([
             [
                 InlineKeyboardButton(
                     text=f"{'✅' if c['tubes']==1 else '⚪'} 1 труба",
-                    callback_data=code(c['doors'], c['color'], c['door_type'], c['aysha_count'], c['h_size'], c['h_type'], c['h_color'], 1, c['drawers'], c['antresol'])
+                    callback_data=code(c['doors'], c['color'], c['door_type'], c['mirrors'], c['h_size'], c['h_type'], c['h_color'], 1, c['drawers'], c['antresol'])
                 ),
                 InlineKeyboardButton(
                     text=f"{'✅' if c['tubes']==2 else '⚪'} 2 трубы",
-                    callback_data=code(c['doors'], c['color'], c['door_type'], c['aysha_count'], c['h_size'], c['h_type'], c['h_color'], 2, c['drawers'], c['antresol'])
+                    callback_data=code(c['doors'], c['color'], c['door_type'], c['mirrors'], c['h_size'], c['h_type'], c['h_color'], 2, c['drawers'], c['antresol'])
                 ),
             ]
         ] if c['doors'] == 6 else []),
@@ -257,7 +256,7 @@ async def opt_color(cb: CallbackQuery):
         row.append(
             InlineKeyboardButton(
                 text=f"{'✅' if is_sel else ''}{col_name}",
-                callback_data=code(c['doors'], col_code, c['door_type'], c['aysha_count'], c['h_size'], c['h_type'], c['h_color'], c['tubes'], c['drawers'], c['antresol'])
+                callback_data=code(c['doors'], col_code, c['door_type'], c['mirrors'], c['h_size'], c['h_type'], c['h_color'], c['tubes'], c['drawers'], c['antresol'])
             )
         )
         if len(row) == 3:
@@ -280,11 +279,11 @@ async def opt_door(cb: CallbackQuery):
     
     buttons = []
     for d_code, d_name in DOORS.items():
-        is_sel = d_code == c['door_type'] and c['aysha_count'] == c['doors']
+        is_sel = d_code == c['door_type'] and c['mirrors'] == 0
         buttons.append(
             InlineKeyboardButton(
                 text=f"{'✅' if is_sel else ''}{d_name}",
-                callback_data=code(c['doors'], c['color'], d_code, c['doors'], c['h_size'], c['h_type'], c['h_color'], c['tubes'], c['drawers'], c['antresol'])
+                callback_data=code(c['doors'], c['color'], d_code, 0, c['h_size'], c['h_type'], c['h_color'], c['tubes'], c['drawers'], c['antresol'])
             )
         )
     
@@ -297,30 +296,26 @@ async def opt_door(cb: CallbackQuery):
     await cb.answer()
 
 
-# ===== РАМКИ (только для Айша) =====
+# ===== РАМКИ (доступны с любым типом дверей) =====
 @router.callback_query(F.data.startswith("mir_"))
 async def opt_mirror(cb: CallbackQuery):
     orig = cb.data.replace("mir_", "")
     c = parse(orig)
     
-    if c['door_type'] != 'aysha':
-        await cb.answer("🪞 Рамки доступны только с дверями Айша", show_alert=True)
-        return
-    
     buttons = []
-    for aysha in range(c['doors'], 0, -1):
-        mirrors = c['doors'] - aysha
-        is_sel = aysha == c['aysha_count']
+    for m in range(0, c['doors']):
+        is_sel = m == c['mirrors']
+        main_doors = c['doors'] - m
         
-        if mirrors == 0:
-            label = f"Все {c['doors']} Айша"
+        if m == 0:
+            label = f"Без рамок ({c['doors']} {DOORS[c['door_type']]})"
         else:
-            label = f"{aysha} Айша + {mirrors} Рамка"
+            label = f"{main_doors} {DOORS[c['door_type']]} + {m} Рамка"
         
         buttons.append(
             InlineKeyboardButton(
                 text=f"{'✅' if is_sel else ''}{label}",
-                callback_data=code(c['doors'], c['color'], 'aysha', aysha, c['h_size'], c['h_type'], c['h_color'], c['tubes'], c['drawers'], c['antresol'])
+                callback_data=code(c['doors'], c['color'], c['door_type'], m, c['h_size'], c['h_type'], c['h_color'], c['tubes'], c['drawers'], c['antresol'])
             )
         )
     
@@ -328,17 +323,16 @@ async def opt_mirror(cb: CallbackQuery):
     rows.append([InlineKeyboardButton(text="◀️ Назад", callback_data=orig)])
     
     kb = InlineKeyboardMarkup(inline_keyboard=rows)
-    await cb.message.edit_caption(caption="🪞 <b>Сколько дверей Айша? (остальные = Рамки)</b>", reply_markup=kb, parse_mode="HTML")
+    await cb.message.edit_caption(caption="🪞 <b>Сколько рамок с зеркалом?</b>", reply_markup=kb, parse_mode="HTML")
     await cb.answer()
 
 
-# ===== РУЧКИ (всё на одном экране) =====
+# ===== РУЧКИ =====
 @router.callback_query(F.data.startswith("hnd_"))
 async def opt_handle(cb: CallbackQuery):
     orig = cb.data.replace("hnd_", "")
     c = parse(orig)
     
-    # Размер
     size_row = []
     for size in [30, 60, 100]:
         is_sel = size == c['h_size']
@@ -349,29 +343,27 @@ async def opt_handle(cb: CallbackQuery):
         size_row.append(
             InlineKeyboardButton(
                 text=f"{'✅' if is_sel else ''}{label}",
-                callback_data=code(c['doors'], c['color'], c['door_type'], c['aysha_count'], size, c['h_type'], c['h_color'], c['tubes'], c['drawers'], c['antresol'])
+                callback_data=code(c['doors'], c['color'], c['door_type'], c['mirrors'], size, c['h_type'], c['h_color'], c['tubes'], c['drawers'], c['antresol'])
             )
         )
     
-    # Тип
     type_row = []
     for i, t_name in enumerate(HANDLE_TYPES):
         is_sel = i == c['h_type']
         type_row.append(
             InlineKeyboardButton(
                 text=f"{'✅' if is_sel else ''}{t_name}",
-                callback_data=code(c['doors'], c['color'], c['door_type'], c['aysha_count'], c['h_size'], i, c['h_color'], c['tubes'], c['drawers'], c['antresol'])
+                callback_data=code(c['doors'], c['color'], c['door_type'], c['mirrors'], c['h_size'], i, c['h_color'], c['tubes'], c['drawers'], c['antresol'])
             )
         )
     
-    # Цвет
     color_row = []
     for i, col_name in enumerate(HANDLE_COLORS):
         is_sel = i == c['h_color']
         color_row.append(
             InlineKeyboardButton(
                 text=f"{'✅' if is_sel else ''}{col_name}",
-                callback_data=code(c['doors'], c['color'], c['door_type'], c['aysha_count'], c['h_size'], c['h_type'], i, c['tubes'], c['drawers'], c['antresol'])
+                callback_data=code(c['doors'], c['color'], c['door_type'], c['mirrors'], c['h_size'], c['h_type'], i, c['tubes'], c['drawers'], c['antresol'])
             )
         )
     
@@ -421,9 +413,10 @@ async def add_to_cart(cb: CallbackQuery):
     price = calc_price(c)
     total = price * qty
     
-    mirrors = c['doors'] - c['aysha_count'] if c['door_type'] == 'aysha' and c['aysha_count'] < c['doors'] else 0
+    mirrors = c['mirrors']
     if mirrors > 0:
-        door_text = f"{c['aysha_count']}× Айша + {mirrors}× Рамка"
+        main_doors = c['doors'] - mirrors
+        door_text = f"{main_doors}× {DOORS[c['door_type']]} + {mirrors}× Рамка"
     else:
         door_text = f"{c['doors']}× {DOORS[c['door_type']]}"
     
