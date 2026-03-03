@@ -17,34 +17,34 @@ MILAN_BASE_PRICES = {
     3: 14000,
     4: 21000,
     5: 24000,
-    6: 25200  # 6 дверей, 2 трубы по умолчанию
+    6: 25000
 }
 
 # Доплата за Айшу
 AYSHA_EXTRA = {
-    2: 2000,   # 13000 - 11000
-    3: 3000,   # 17000 - 14000
-    4: 3000,   # 24000 - 21000
-    5: 5000,   # 29000 - 24000
-    6: 4800    # 30000 - 25200
+    2: 2000,
+    3: 3000,
+    4: 4000,
+    5: 5000,
+    6: 6000
 }
 
-# Цены антресолей (Турция/Рим)
+# Цены антресолей
 ANTRESOL_PRICES = {
-    2: 4000,   # 15000 - 11000
-    3: 6000,   # 20000 - 14000 (для 3дв антр 4дв)
-    4: 8000,   # 29000 - 21000
-    5: 11000,  # 35000 - 24000 (для 5дв антр 4дв)
-    6: 11800   # 37000 - 25200
+    2: 4000,
+    3: 6000,
+    4: 8000,
+    5: 11000,
+    6: 12000
 }
 
-# Размеры шкафов (примерные)
+# Размеры шкафов
 MILAN_SIZES = {
-    2: "Ширина: 100см, Высота: 240см, Глубина: 60см",
-    3: "Ширина: 150см, Высота: 240см, Глубина: 60см",
-    4: "Ширина: 200см, Высота: 240см, Глубина: 60см",
-    5: "Ширина: 250см, Высота: 240см, Глубина: 60см",
-    6: "Ширина: 300см, Высота: 240см, Глубина: 60см"
+    2: "Ширина: 90см, Высота: 220см, Глубина: 52см",
+    3: "Ширина: 135см, Высота: 220см, Глубина: 52см",
+    4: "Ширина: 180см, Высота: 220см, Глубина: 52см",
+    5: "Ширина: 225см, Высота: 220см, Глубина: 52см",
+    6: "Ширина: 270см, Высота: 220см, Глубина: 52см"
 }
 
 
@@ -121,12 +121,19 @@ async def milan_show_config(callback: CallbackQuery, state: FSMContext):
 async def show_product_card(callback: CallbackQuery, state: FSMContext):
     """Карточка товара с ценой и опциями"""
     data = await state.get_data()
+    
+    # Проверяем есть ли данные
+    if 'doors' not in data:
+        await callback.answer("⚠️ Сессия истекла. Выберите заново.", show_alert=True)
+        await milan_start(callback, state)
+        return
+    
     doors = data['doors']
-    door_type = data['door_type']
-    handle_size = data['handle_size']
+    door_type = data.get('door_type', 'Турция/Рим')
+    handle_size = data.get('handle_size', 30)
     tubes = data.get('tubes')
-    has_antresol = data['has_antresol']
-    has_drawers = data['has_drawers']
+    has_antresol = data.get('has_antresol', False)
+    has_drawers = data.get('has_drawers', False)
     
     # Расчёт цены
     base_price = MILAN_BASE_PRICES[doors]
@@ -137,11 +144,11 @@ async def show_product_card(callback: CallbackQuery, state: FSMContext):
     
     # 6 дверей, 1 труба
     if doors == 6 and tubes == 1:
-        base_price += 1800  # 27000 - 25200
+        base_price += 1800
     
     # Ручки
     handle_prices = {30: 0, 60: 700, 100: 1000}
-    handle_price = handle_prices[handle_size] * doors
+    handle_price = handle_prices.get(handle_size, 0) * doors
     
     # Ящики
     drawers_price = 2000 if has_drawers else 0
@@ -153,9 +160,8 @@ async def show_product_card(callback: CallbackQuery, state: FSMContext):
         if doors in [3, 5]:
             antresol_doors = 4
         
-        antresol_price = ANTRESOL_PRICES[antresol_doors]
+        antresol_price = ANTRESOL_PRICES.get(antresol_doors, 0)
         
-        # Айша +500₽/дверь на антресоль
         if door_type == 'Айша':
             antresol_price += 500 * antresol_doors
     
@@ -165,9 +171,7 @@ async def show_product_card(callback: CallbackQuery, state: FSMContext):
     
     # Формируем текст
     text = f"🛋 <b>Милан - Шкаф-купе {doors} дверей</b>\n\n"
-    
     text += f"📐 <b>Размеры:</b>\n{MILAN_SIZES[doors]}\n\n"
-    
     text += f"<b>Конфигурация:</b>\n"
     text += f"├ Двери: {door_type}\n"
     if tubes:
@@ -175,13 +179,12 @@ async def show_product_card(callback: CallbackQuery, state: FSMContext):
     text += f"├ Ручки: {handle_size}см"
     if handle_price > 0:
         text += f" (+{handle_price:,}₽)"
-    text += f"\n├ Выдвижные ящики: {'Да (+2,000₽)' if has_drawers else 'Нет'}\n"
+    text += f"\n├ Ящики: {'Да (+2,000₽)' if has_drawers else 'Нет'}\n"
     text += f"└ Антресоль: {'Да (+' + f'{antresol_price:,}₽)' if has_antresol else 'Нет'}\n\n"
-    
     text += f"💰 <b>ЦЕНА: {total_price:,}₽</b>"
     
-    # Кнопки для изменения
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+    # Кнопки
+    buttons = [
         [
             InlineKeyboardButton(
                 text=f"{'✅' if door_type == 'Турция/Рим' else '🚪'} Турция/Рим",
@@ -192,37 +195,11 @@ async def show_product_card(callback: CallbackQuery, state: FSMContext):
                 callback_data="milan_door_aysha"
             ),
         ],
-        [
-            InlineKeyboardButton(
-                text=f"{'✅' if handle_size == 30 else '🔧'} Ручки 30см",
-                callback_data="milan_handle_30"
-            ),
-            InlineKeyboardButton(
-                text=f"{'✅' if handle_size == 60 else '🔧'} Ручки 60см",
-                callback_data="milan_handle_60"
-            ),
-            InlineKeyboardButton(
-                text=f"{'✅' if handle_size == 100 else '🔧'} Ручки 100см",
-                callback_data="milan_handle_100"
-            ),
-        ],
-        [
-            InlineKeyboardButton(
-                text=f"{'✅' if has_drawers else '➕'} Выдвижные ящики",
-                callback_data="milan_toggle_drawers"
-            ),
-        ],
-        [
-            InlineKeyboardButton(
-                text=f"{'✅' if has_antresol else '➕'} Антресоль",
-                callback_data="milan_toggle_antresol"
-            ),
-        ],
-    ])
+    ]
     
-    # Для 6 дверей добавляем выбор труб
+    # Для 6 дверей — выбор труб
     if doors == 6:
-        keyboard.inline_keyboard.insert(1, [
+        buttons.append([
             InlineKeyboardButton(
                 text=f"{'✅' if tubes == 1 else '⚙️'} 1 труба",
                 callback_data="milan_tubes_1"
@@ -233,30 +210,57 @@ async def show_product_card(callback: CallbackQuery, state: FSMContext):
             ),
         ])
     
-    # Кнопки действий
-    keyboard.inline_keyboard.extend([
-        [InlineKeyboardButton(text="🛒 Добавить в корзину", callback_data="milan_add_cart")],
+    buttons.extend([
+        [
+            InlineKeyboardButton(
+                text=f"{'✅' if handle_size == 30 else '🔧'} 30см",
+                callback_data="milan_handle_30"
+            ),
+            InlineKeyboardButton(
+                text=f"{'✅' if handle_size == 60 else '🔧'} 60см (+)",
+                callback_data="milan_handle_60"
+            ),
+            InlineKeyboardButton(
+                text=f"{'✅' if handle_size == 100 else '🔧'} 100см (+)",
+                callback_data="milan_handle_100"
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"{'✅' if has_drawers else '➕'} Ящики (+2000₽)",
+                callback_data="milan_toggle_drawers"
+            ),
+            InlineKeyboardButton(
+                text=f"{'✅' if has_antresol else '➕'} Антресоль",
+                callback_data="milan_toggle_antresol"
+            ),
+        ],
+        [InlineKeyboardButton(text="🛒 В корзину", callback_data="milan_add_cart")],
         [
             InlineKeyboardButton(text="🔄 Другой размер", callback_data="cat_milan"),
-            InlineKeyboardButton(text="◀️ В каталог", callback_data="back_to_catalog")
+            InlineKeyboardButton(text="◀️ Каталог", callback_data="back_to_catalog")
         ],
     ])
     
-    # TODO: Здесь можно добавить фото
-    # await callback.message.answer_photo(
-    #     photo="URL_ФОТО",
-    #     caption=text,
-    #     reply_markup=keyboard
-    # )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     
-    await callback.message.edit_text(text, reply_markup=keyboard)
+    try:
+        await callback.message.edit_text(text, reply_markup=keyboard)
+    except:
+        await callback.message.answer(text, reply_markup=keyboard)
+    
     await state.set_state(MilanConfig.viewing)
 
 
-# Обработчики изменения опций
 @router.callback_query(F.data.startswith("milan_door_"))
 async def milan_change_door_type(callback: CallbackQuery, state: FSMContext):
     """Смена типа дверей"""
+    data = await state.get_data()
+    if 'doors' not in data:
+        await callback.answer("⚠️ Выберите шкаф заново", show_alert=True)
+        await milan_start(callback, state)
+        return
+    
     door_type = 'Турция/Рим' if callback.data.endswith('_tr') else 'Айша'
     await state.update_data(door_type=door_type)
     await show_product_card(callback, state)
@@ -266,6 +270,12 @@ async def milan_change_door_type(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith("milan_handle_"))
 async def milan_change_handles(callback: CallbackQuery, state: FSMContext):
     """Смена ручек"""
+    data = await state.get_data()
+    if 'doors' not in data:
+        await callback.answer("⚠️ Выберите шкаф заново", show_alert=True)
+        await milan_start(callback, state)
+        return
+    
     handle_size = int(callback.data.split("_")[-1])
     await state.update_data(handle_size=handle_size)
     await show_product_card(callback, state)
@@ -275,6 +285,12 @@ async def milan_change_handles(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith("milan_tubes_"))
 async def milan_change_tubes(callback: CallbackQuery, state: FSMContext):
     """Смена количества труб"""
+    data = await state.get_data()
+    if 'doors' not in data:
+        await callback.answer("⚠️ Выберите шкаф заново", show_alert=True)
+        await milan_start(callback, state)
+        return
+    
     tubes = int(callback.data.split("_")[-1])
     await state.update_data(tubes=tubes)
     await show_product_card(callback, state)
@@ -285,6 +301,11 @@ async def milan_change_tubes(callback: CallbackQuery, state: FSMContext):
 async def milan_toggle_drawers(callback: CallbackQuery, state: FSMContext):
     """Переключение ящиков"""
     data = await state.get_data()
+    if 'doors' not in data:
+        await callback.answer("⚠️ Выберите шкаф заново", show_alert=True)
+        await milan_start(callback, state)
+        return
+    
     has_drawers = not data.get('has_drawers', False)
     await state.update_data(has_drawers=has_drawers)
     await show_product_card(callback, state)
@@ -295,6 +316,11 @@ async def milan_toggle_drawers(callback: CallbackQuery, state: FSMContext):
 async def milan_toggle_antresol(callback: CallbackQuery, state: FSMContext):
     """Переключение антресоли"""
     data = await state.get_data()
+    if 'doors' not in data:
+        await callback.answer("⚠️ Выберите шкаф заново", show_alert=True)
+        await milan_start(callback, state)
+        return
+    
     has_antresol = not data.get('has_antresol', False)
     await state.update_data(has_antresol=has_antresol)
     await show_product_card(callback, state)
@@ -305,6 +331,10 @@ async def milan_toggle_antresol(callback: CallbackQuery, state: FSMContext):
 async def milan_add_to_cart(callback: CallbackQuery, state: FSMContext):
     """Добавление в корзину"""
     data = await state.get_data()
+    if 'doors' not in data:
+        await callback.answer("⚠️ Выберите шкаф заново", show_alert=True)
+        await milan_start(callback, state)
+        return
     
     # TODO: Сохранение в БД
     
