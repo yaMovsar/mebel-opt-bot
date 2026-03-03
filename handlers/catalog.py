@@ -3,7 +3,6 @@ from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-import asyncpg
 from database import pool
 
 router = Router()
@@ -18,17 +17,49 @@ class MilanConfig(StatesGroup):
     choosing_antresol = State()
 
 
+# Цены Милан
+MILAN_PRICES = {
+    'tr': {  # Турция/Рим
+        2: 11000,
+        3: 14000,
+        4: 21000,
+        5: 24000,
+        '6_2': 25200,  # 6 дверей, 2 трубы
+        '6_1': 27000   # 6 дверей, 1 труба
+    },
+    'aysha': {  # Айша
+        2: 13000,
+        3: 17000,
+        4: 24000,
+        5: 29000,
+        '6_2': 30000,
+        '6_1': 32000
+    }
+}
+
+# Цены антресолей
+ANTRESOL_PRICES = {
+    'tr': {  # Турция/Рим
+        2: 15000,
+        4: 29000,
+        6: 37000
+    },
+    'aysha': {  # Айша
+        2: 18000,
+        4: 34000,
+        6: 45200
+    }
+}
+
+
 @router.message(Command("catalog"))
 async def cmd_catalog(message: Message):
     """Главное меню каталога"""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🛋 Милан", callback_data="cat_milan")],
-        [InlineKeyboardButton(text="✨ Элегант", callback_data="cat_elegant")],
-        [InlineKeyboardButton(text="💎 Премиум", callback_data="cat_premium")],
-        [InlineKeyboardButton(text="🔧 Техно", callback_data="cat_techno")],
-        [InlineKeyboardButton(text="🚪 Прихожие", callback_data="cat_hallway")],
-        [InlineKeyboardButton(text="📦 Комоды", callback_data="cat_dresser")],
-        [InlineKeyboardButton(text="🪑 Тумбы", callback_data="cat_cabinet")],
+        [InlineKeyboardButton(text="✨ Элегант (скоро)", callback_data="cat_soon")],
+        [InlineKeyboardButton(text="💎 Премиум (скоро)", callback_data="cat_soon")],
+        [InlineKeyboardButton(text="🔧 Техно (скоро)", callback_data="cat_soon")],
     ])
     
     await message.answer(
@@ -38,9 +69,16 @@ async def cmd_catalog(message: Message):
     )
 
 
+@router.callback_query(F.data == "cat_soon")
+async def catalog_soon(callback: CallbackQuery):
+    await callback.answer("🚧 Раздел в разработке", show_alert=True)
+
+
 @router.callback_query(F.data == "cat_milan")
 async def milan_start(callback: CallbackQuery, state: FSMContext):
     """Начало конфигурации Милан"""
+    await state.clear()
+    
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="2 двери", callback_data="milan_doors_2"),
@@ -71,7 +109,7 @@ async def milan_choose_door_type(callback: CallbackQuery, state: FSMContext):
     await state.update_data(doors=doors)
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🇹🇷 Турция/Рим", callback_data="milan_type_tr")],
+        [InlineKeyboardButton(text="🚪 Турция/Рим", callback_data="milan_type_tr")],
         [InlineKeyboardButton(text="✨ Айша", callback_data="milan_type_aysha")],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="cat_milan")],
     ])
@@ -85,8 +123,8 @@ async def milan_choose_door_type(callback: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(F.data.startswith("milan_type_"))
-async def milan_choose_tubes(callback: CallbackQuery, state: FSMContext):
-    """Выбор количества труб (для 6 дверей) или переход к ручкам"""
+async def milan_after_door_type(callback: CallbackQuery, state: FSMContext):
+    """После выбора типа дверей"""
     door_type = callback.data.split("_")[-1]
     data = await state.get_data()
     doors = data['doors']
@@ -101,20 +139,43 @@ async def milan_choose_tubes(callback: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text="◀️ Назад", callback_data=f"milan_doors_{doors}")],
         ])
         
+        door_name = 'Турция/Рим' if door_type == 'tr' else 'Айша'
+        
         await callback.message.edit_text(
             f"🛋 <b>Милан - {doors} дверей</b>\n"
-            f"Тип: {'Турция/Рим' if door_type == 'tr' else 'Айша'}\n\n"
+            f"Тип дверей: {door_name}\n\n"
             "Выберите количество труб:",
             reply_markup=keyboard
         )
         await state.set_state(MilanConfig.choosing_tubes)
     else:
         # Переходим к выбору ручек
-        await milan_choose_handles_start(callback, state, doors, door_type, None)
+        await show_handles_menu(callback, state)
 
 
-async def milan_choose_handles_start(callback: CallbackQuery, state: FSMContext, doors: int, door_type: str, tubes: int = None):
-    """Выбор ручек"""
+@router.callback_query(F.data.startswith("milan_tubes_"))
+async def milan_tubes_selected(callback: CallbackQuery, state: FSMContext):
+    """Трубы выбраны"""
+    tubes = int(callback.data.split("_")[-1])
+    await state.update_data(tubes=tubes)
+    await show_handles_menu(callback, state)
+
+
+async def show_handles_menu(callback: CallbackQuery, state: FSMContext):
+    """Показать меню выбора ручек"""
+    data = await state.get_data()
+    doors = data['doors']
+    door_type = data['door_type']
+    tubes = data.get('tubes')
+    
+    # Получаем базовую цену
+    if doors == 6 and tubes:
+        base_price = MILAN_PRICES[door_type][f'6_{tubes}']
+    else:
+        base_price = MILAN_PRICES[door_type][doors]
+    
+    await state.update_data(base_price=base_price)
+    
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="30см (стандарт)", callback_data="milan_handle_30")],
         [InlineKeyboardButton(text="60см (+700₽/шт)", callback_data="milan_handle_60")],
@@ -122,47 +183,26 @@ async def milan_choose_handles_start(callback: CallbackQuery, state: FSMContext,
         [InlineKeyboardButton(text="◀️ Назад", callback_data=f"milan_type_{door_type}")],
     ])
     
-    # Получаем базовую цену
-    async with pool.acquire() as conn:
-        if tubes:
-            price = await conn.fetchval(
-                "SELECT price FROM milan_configs WHERE doors = $1 AND door_type LIKE $2",
-                doors, f"%{tubes} труб%"
-            )
-        else:
-            door_name = 'Турция/Рим' if door_type == 'tr' else 'Айша'
-            price = await conn.fetchval(
-                "SELECT price FROM milan_configs WHERE doors = $1 AND door_type = $2",
-                doors, door_name
-            )
-    
-    await state.update_data(base_price=price, tubes=tubes)
+    door_name = 'Турция/Рим' if door_type == 'tr' else 'Айша'
     
     text = f"🛋 <b>Милан - {doors} дверей</b>\n"
-    text += f"Тип: {'Турция/Рим' if door_type == 'tr' else 'Айша'}\n"
+    text += f"Тип дверей: {door_name}\n"
     if tubes:
         text += f"Трубы: {tubes}\n"
-    text += f"\n💰 Базовая цена: <b>{price:,}₽</b>\n\n"
+    text += f"\n💰 Базовая цена: <b>{base_price:,}₽</b>\n\n"
     text += "Выберите ручки:"
     
     await callback.message.edit_text(text, reply_markup=keyboard)
     await state.set_state(MilanConfig.choosing_handles)
 
 
-@router.callback_query(F.data.startswith("milan_tubes_"))
-async def milan_tubes_selected(callback: CallbackQuery, state: FSMContext):
-    """Трубы выбраны"""
-    tubes = int(callback.data.split("_")[-1])
-    data = await state.get_data()
-    await milan_choose_handles_start(callback, state, data['doors'], data['door_type'], tubes)
-
-
 @router.callback_query(F.data.startswith("milan_handle_"))
 async def milan_handle_selected(callback: CallbackQuery, state: FSMContext):
-    """Ручки выбраны, спрашиваем про ящики"""
+    """Ручки выбраны"""
     handle_size = int(callback.data.split("_")[-1])
     data = await state.get_data()
     
+    # Расчёт цены ручек
     handle_prices = {30: 0, 60: 700, 100: 1000}
     handle_price = handle_prices[handle_size] * data['doors']
     
@@ -174,14 +214,17 @@ async def milan_handle_selected(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="◀️ Назад", callback_data=f"milan_type_{data['door_type']}")],
     ])
     
-    total_price = data['base_price'] + handle_price
+    total = data['base_price'] + handle_price
+    door_name = 'Турция/Рим' if data['door_type'] == 'tr' else 'Айша'
     
     text = f"🛋 <b>Милан - {data['doors']} дверей</b>\n"
-    text += f"Тип: {'Турция/Рим' if data['door_type'] == 'tr' else 'Айша'}\n"
+    text += f"Тип дверей: {door_name}\n"
     if data.get('tubes'):
         text += f"Трубы: {data['tubes']}\n"
-    text += f"Ручки: {handle_size}см\n\n"
-    text += f"💰 Текущая цена: <b>{total_price:,}₽</b>\n\n"
+    text += f"Ручки: {handle_size}см"
+    if handle_price > 0:
+        text += f" (+{handle_price:,}₽)"
+    text += f"\n\n💰 Текущая цена: <b>{total:,}₽</b>\n\n"
     text += "Добавить выдвижные ящики?"
     
     await callback.message.edit_text(text, reply_markup=keyboard)
@@ -190,7 +233,7 @@ async def milan_handle_selected(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("milan_drawers_"))
 async def milan_drawers_selected(callback: CallbackQuery, state: FSMContext):
-    """Ящики выбраны, спрашиваем про антресоль"""
+    """Ящики выбраны"""
     has_drawers = callback.data.split("_")[-1] == "yes"
     data = await state.get_data()
     
@@ -203,15 +246,16 @@ async def milan_drawers_selected(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="◀️ Назад", callback_data=f"milan_handle_{data['handle_size']}")],
     ])
     
-    total_price = data['base_price'] + data['handle_price'] + drawers_price
+    total = data['base_price'] + data['handle_price'] + drawers_price
+    door_name = 'Турция/Рим' if data['door_type'] == 'tr' else 'Айша'
     
     text = f"🛋 <b>Милан - {data['doors']} дверей</b>\n"
-    text += f"Тип: {'Турция/Рим' if data['door_type'] == 'tr' else 'Айша'}\n"
+    text += f"Тип дверей: {door_name}\n"
     if data.get('tubes'):
         text += f"Трубы: {data['tubes']}\n"
     text += f"Ручки: {data['handle_size']}см\n"
-    text += f"Ящики: {'Да' if has_drawers else 'Нет'}\n\n"
-    text += f"💰 Текущая цена: <b>{total_price:,}₽</b>\n\n"
+    text += f"Ящики: {'Да (+2000₽)' if has_drawers else 'Нет'}\n\n"
+    text += f"💰 Текущая цена: <b>{total:,}₽</b>\n\n"
     text += "Добавить антресоль?"
     
     await callback.message.edit_text(text, reply_markup=keyboard)
@@ -224,57 +268,89 @@ async def milan_final(callback: CallbackQuery, state: FSMContext):
     has_antresol = callback.data.split("_")[-1] == "yes"
     data = await state.get_data()
     
-    # Рассчитываем цену антресоли
+    # Расчёт цены антресоли
     antresol_price = 0
     if has_antresol:
         doors = data['doors']
         door_type = data['door_type']
         
-        # Антресоль по размеру шкафа
+        # Антресоль по размеру шкафа (3,5 дв → 4 дв антресоль)
         antresol_doors = doors
         if doors in [3, 5]:
             antresol_doors = 4
         
-        # Базовая цена антресоли
-        async with pool.acquire() as conn:
-            door_name = 'Турция/Рим' if door_type == 'tr' else 'Айша'
-            antresol_base = await conn.fetchval(
-                "SELECT price FROM milan_configs WHERE doors = $1 AND door_type = $2",
-                antresol_doors, door_name
-            )
-        
-        antresol_price = antresol_base
-        
-        # Айша +500₽ за дверь антресоли
-        if door_type == 'aysha':
-            antresol_price += 500 * antresol_doors
+        antresol_price = ANTRESOL_PRICES[door_type][antresol_doors]
     
-    total_price = data['base_price'] + data['handle_price'] + data['drawers_price'] + antresol_price
+    total = data['base_price'] + data['handle_price'] + data['drawers_price'] + antresol_price
     
-    await state.update_data(has_antresol=has_antresol, antresol_price=antresol_price, total_price=total_price)
+    await state.update_data(
+        has_antresol=has_antresol,
+        antresol_price=antresol_price,
+        total_price=total
+    )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🛒 Добавить в корзину", callback_data="milan_add_to_cart")],
+        [InlineKeyboardButton(text="🛒 Добавить в корзину", callback_data="milan_add_cart")],
         [InlineKeyboardButton(text="🔄 Изменить конфигурацию", callback_data="cat_milan")],
         [InlineKeyboardButton(text="◀️ В каталог", callback_data="back_to_catalog")],
     ])
     
+    door_name = 'Турция/Рим' if data['door_type'] == 'tr' else 'Айша'
+    
     text = "✅ <b>Конфигурация готова!</b>\n\n"
     text += f"🛋 <b>Милан - {data['doors']} дверей</b>\n"
-    text += f"Тип: {'Турция/Рим' if data['door_type'] == 'tr' else 'Айша'}\n"
+    text += f"├ Тип дверей: {door_name}\n"
     if data.get('tubes'):
-        text += f"Трубы: {data['tubes']}\n"
-    text += f"Ручки: {data['handle_size']}см\n"
-    text += f"Ящики: {'Да (+2000₽)' if data['has_drawers'] else 'Нет'}\n"
-    text += f"Антресоль: {'Да (+' + f'{antresol_price:,}₽)' if has_antresol else 'Нет'}\n\n"
-    text += f"💰 <b>ИТОГО: {total_price:,}₽</b>"
+        text += f"├ Трубы: {data['tubes']}\n"
+    text += f"├ Ручки: {data['handle_size']}см"
+    if data['handle_price'] > 0:
+        text += f" (+{data['handle_price']:,}₽)"
+    text += "\n"
+    text += f"├ Ящики: {'Да (+2,000₽)' if data['has_drawers'] else 'Нет'}\n"
+    text += f"└ Антресоль: {'Да (+' + f'{antresol_price:,}₽)' if has_antresol else 'Нет'}\n\n"
+    text += f"💰 <b>ИТОГО: {total:,}₽</b>"
     
     await callback.message.edit_text(text, reply_markup=keyboard)
+
+
+@router.callback_query(F.data == "milan_add_cart")
+async def milan_add_to_cart(callback: CallbackQuery, state: FSMContext):
+    """Добавление в корзину"""
+    data = await state.get_data()
+    
+    # TODO: Сохранение в БД корзины
+    
+    await callback.answer("✅ Товар добавлен в корзину!", show_alert=True)
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🛒 Перейти в корзину", callback_data="go_to_cart")],
+        [InlineKeyboardButton(text="🛋 Добавить ещё", callback_data="cat_milan")],
+        [InlineKeyboardButton(text="◀️ В каталог", callback_data="back_to_catalog")],
+    ])
+    
+    await callback.message.edit_reply_markup(reply_markup=keyboard)
 
 
 @router.callback_query(F.data == "back_to_catalog")
 async def back_to_catalog(callback: CallbackQuery, state: FSMContext):
     """Возврат в каталог"""
     await state.clear()
-    await cmd_catalog(callback.message)
-    await callback.answer()
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🛋 Милан", callback_data="cat_milan")],
+        [InlineKeyboardButton(text="✨ Элегант (скоро)", callback_data="cat_soon")],
+        [InlineKeyboardButton(text="💎 Премиум (скоро)", callback_data="cat_soon")],
+        [InlineKeyboardButton(text="🔧 Техно (скоро)", callback_data="cat_soon")],
+    ])
+    
+    await callback.message.edit_text(
+        "📋 <b>Каталог мебели</b>\n\n"
+        "Выберите категорию:",
+        reply_markup=keyboard
+    )
+
+
+@router.callback_query(F.data == "go_to_cart")
+async def go_to_cart(callback: CallbackQuery):
+    """Переход в корзину"""
+    await callback.answer("🛒 Корзина в разработке", show_alert=True)
