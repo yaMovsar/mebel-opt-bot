@@ -1,14 +1,21 @@
-import aiosqlite
+import asyncpg
+import os
 from config import DATABASE_URL
 
-DB_PATH = 'bot.db'
+pool = None
 
 async def init_db():
-    """Инициализация базы данных"""
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute('''
+    """Инициализация базы данных PostgreSQL"""
+    global pool
+    
+    # Создаем пул соединений
+    pool = await asyncpg.create_pool(DATABASE_URL)
+    
+    async with pool.acquire() as conn:
+        # Таблица пользователей
+        await conn.execute('''
             CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
+                user_id BIGINT PRIMARY KEY,
                 username TEXT,
                 full_name TEXT,
                 role TEXT DEFAULT 'client',
@@ -18,31 +25,65 @@ async def init_db():
             )
         ''')
         
-        await db.execute('''
+        # Таблица админов
+        await conn.execute('''
             CREATE TABLE IF NOT EXISTS admins (
-                user_id INTEGER PRIMARY KEY,
+                user_id BIGINT PRIMARY KEY,
                 added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
-        await db.execute('''
+        # Таблица работников
+        await conn.execute('''
             CREATE TABLE IF NOT EXISTS workers (
-                user_id INTEGER PRIMARY KEY,
+                user_id BIGINT PRIMARY KEY,
                 added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
-        await db.commit()
+        # Добавляем начальных админов/работников
+        from config import ADMIN_ID, WORKER_ID
+        
+        await conn.execute('''
+            INSERT INTO admins (user_id) VALUES ($1)
+            ON CONFLICT (user_id) DO NOTHING
+        ''', ADMIN_ID)
+        
+        await conn.execute('''
+            INSERT INTO workers (user_id) VALUES ($1)
+            ON CONFLICT (user_id) DO NOTHING
+        ''', WORKER_ID)
+
 
 async def get_user_role(user_id: int) -> str:
     """Получить роль пользователя"""
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute('SELECT user_id FROM admins WHERE user_id = ?', (user_id,)) as cursor:
-            if await cursor.fetchone():
-                return 'admin'
+    async with pool.acquire() as conn:
+        # Проверяем админа
+        admin = await conn.fetchval(
+            'SELECT user_id FROM admins WHERE user_id = $1',
+            user_id
+        )
+        if admin:
+            return 'admin'
         
-        async with db.execute('SELECT user_id FROM workers WHERE user_id = ?', (user_id,)) as cursor:
-            if await cursor.fetchone():
-                return 'worker'
+        # Проверяем работника
+        worker = await conn.fetchval(
+            'SELECT user_id FROM workers WHERE user_id = $1',
+            user_id
+        )
+        if worker:
+            return 'worker'
         
         return 'client'
+
+
+async def register_user(user_id: int, username: str = None, full_name: str = None):
+    """Регистрация пользователя"""
+    async with pool.acquire() as conn:
+        await conn.execute('''
+            INSERT INTO users (user_id, username, full_name)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id) DO UPDATE
+            SET username = EXCLUDED.username,
+                full_name = EXCLUDED.full_name
+        ''', user_id, username, full_name)
