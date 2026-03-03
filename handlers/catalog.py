@@ -237,7 +237,7 @@ async def milan_show(callback: CallbackQuery):
     has_antresol = config['has_antresol']
     has_drawers = config['has_drawers']
     
-    # === ТЕКСТ КАРТОЧКИ ===
+        # === ТЕКСТ КАРТОЧКИ ===
     text = f"🚪 <b>Шкаф МИЛАН {doors} дверей</b>\n\n"
     
     text += f"📐 <b>Размеры:</b>\n{get_sizes_text(doors, has_antresol)}\n\n"
@@ -245,14 +245,24 @@ async def milan_show(callback: CallbackQuery):
     text += f"<b>Комплектация:</b>\n"
     text += f"├ Цвет: {get_color_name(color)}\n"
     text += f"├ Двери: {get_doors_text(d1_type, d1_count, d2_type, d2_count)}\n"
+    
     if doors == 6:
         text += f"├ Трубы: {tubes} шт\n"
-    text += f"├ Ручки: {handle_size}см"
+    
     if prices['handle_price'] > 0:
-        text += f" (+{prices['handle_price']:,}₽)"
-    text += f"\n"
-    text += f"├ Доп.Ящики: {'Да (+' + f'{prices["drawers_price"]:,}₽)' if has_drawers else 'Нет'}\n"
-    text += f"└ Антресоль: {'Да (+50см)' if has_antresol else 'Нет'}\n\n"
+        text += f"├ Ручки: {handle_size}см (+{prices['handle_price']:,}₽)\n"
+    else:
+        text += f"├ Ручки: {handle_size}см\n"
+    
+    if has_drawers:
+        text += f"├ Доп.Ящики: Да (+{prices['drawers_price']:,}₽)\n"
+    else:
+        text += f"├ Доп.Ящики: Нет\n"
+    
+    if has_antresol:
+        text += f"└ Антресоль: Да (+50см)\n\n"
+    else:
+        text += f"└ Антресоль: Нет\n\n"
     
     text += f"💰 <b>ЦЕНА: {prices['total']:,}₽</b>"
     
