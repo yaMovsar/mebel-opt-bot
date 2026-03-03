@@ -13,7 +13,7 @@ MILAN_BASE_PRICES = {
     3: 14000,
     4: 21000,
     5: 24000,
-    6: 25200
+    6: 25000
 }
 
 # Цены антресолей
@@ -21,17 +21,17 @@ ANTRESOL_PRICES = {
     2: 4000,
     3: 6000,
     4: 8000,
-    5: 11000,
-    6: 11800
+    5: 10000,
+    6: 12000
 }
 
 # Размеры шкафов
 MILAN_SIZES = {
-    2: {"width": 100, "height": 240, "depth": 60},
-    3: {"width": 150, "height": 240, "depth": 60},
-    4: {"width": 200, "height": 240, "depth": 60},
-    5: {"width": 250, "height": 240, "depth": 60},
-    6: {"width": 300, "height": 240, "depth": 60}
+    2: {"width": 90, "height": 220, "depth": 52},
+    3: {"width": 135, "height": 220, "depth": 52},
+    4: {"width": 180, "height": 220, "depth": 52},
+    5: {"width": 235, "height": 220, "depth": 52},
+    6: {"width": 270, "height": 220, "depth": 52}
 }
 
 # Цены ручек за штуку
