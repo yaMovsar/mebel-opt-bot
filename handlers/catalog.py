@@ -17,16 +17,7 @@ MILAN_BASE_PRICES = {
     3: 14000,
     4: 21000,
     5: 24000,
-    6: 25000
-}
-
-# Доплата за Айшу
-AYSHA_EXTRA = {
-    2: 2000,
-    3: 3000,
-    4: 4000,
-    5: 5000,
-    6: 6000
+    6: 25200
 }
 
 # Цены антресолей
@@ -35,17 +26,77 @@ ANTRESOL_PRICES = {
     3: 6000,
     4: 8000,
     5: 11000,
-    6: 12000
+    6: 11800
 }
 
-# Размеры шкафов
+# Размеры шкафов (базовая высота 240см)
 MILAN_SIZES = {
-    2: "Ширина: 90см, Высота: 220см, Глубина: 52см",
-    3: "Ширина: 135см, Высота: 220см, Глубина: 52см",
-    4: "Ширина: 180см, Высота: 220см, Глубина: 52см",
-    5: "Ширина: 225см, Высота: 220см, Глубина: 52см",
-    6: "Ширина: 270см, Высота: 220см, Глубина: 52см"
+    2: {"width": 100, "height": 240, "depth": 60},
+    3: {"width": 150, "height": 240, "depth": 60},
+    4: {"width": 200, "height": 240, "depth": 60},
+    5: {"width": 250, "height": 240, "depth": 60},
+    6: {"width": 300, "height": 240, "depth": 60}
 }
+
+
+def calculate_price(doors, door_type, handle_size, tubes, has_antresol, has_drawers):
+    """Расчёт цены"""
+    # Базовая цена (Турция/Рим)
+    base_price = MILAN_BASE_PRICES[doors]
+    
+    # Айша: -1000 + (1000 × кол-во дверей)
+    aysha_extra = 0
+    if door_type == 'Айша':
+        aysha_extra = -1000 + (1000 * doors)
+    
+    # 6 дверей, 1 труба → +1800
+    tubes_extra = 0
+    if doors == 6 and tubes == 1:
+        tubes_extra = 1800
+    
+    # Ручки
+    handle_prices = {30: 0, 60: 700, 100: 1000}
+    handle_price = handle_prices.get(handle_size, 0) * doors
+    
+    # Ящики
+    drawers_price = 2000 if has_drawers else 0
+    
+    # Антресоль
+    antresol_price = 0
+    if has_antresol:
+        antresol_doors = doors
+        if doors in [3, 5]:
+            antresol_doors = 4
+        
+        antresol_price = ANTRESOL_PRICES.get(antresol_doors, 0)
+        
+        # Айша антресоль +500₽/дверь
+        if door_type == 'Айша':
+            antresol_price += 500 * antresol_doors
+    
+    total = base_price + aysha_extra + tubes_extra + handle_price + drawers_price + antresol_price
+    
+    return {
+        'base': base_price,
+        'aysha_extra': aysha_extra,
+        'tubes_extra': tubes_extra,
+        'handle_price': handle_price,
+        'drawers_price': drawers_price,
+        'antresol_price': antresol_price,
+        'total': total
+    }
+
+
+def get_sizes_text(doors, has_antresol):
+    """Получить текст с размерами"""
+    size = MILAN_SIZES[doors]
+    height = size["height"]
+    
+    # Антресоль добавляет +50см к высоте
+    if has_antresol:
+        height += 50
+    
+    return f"Ширина: {size['width']}см, Высота: {height}см, Глубина: {size['depth']}см"
 
 
 @router.message(Command("catalog"))
@@ -104,7 +155,7 @@ async def milan_show_config(callback: CallbackQuery, state: FSMContext):
     """Показываем готовую конфигурацию"""
     doors = int(callback.data.split("_")[-1])
     
-    # Стартовая конфигурация
+    # Стартовая конфигурация (Турция, 30см ручки, без доп)
     config = {
         'doors': doors,
         'door_type': 'Турция/Рим',
@@ -136,52 +187,45 @@ async def show_product_card(callback: CallbackQuery, state: FSMContext):
     has_drawers = data.get('has_drawers', False)
     
     # Расчёт цены
-    base_price = MILAN_BASE_PRICES[doors]
+    prices = calculate_price(doors, door_type, handle_size, tubes, has_antresol, has_drawers)
     
-    # Айша
-    if door_type == 'Айша':
-        base_price += AYSHA_EXTRA[doors]
-    
-    # 6 дверей, 1 труба
-    if doors == 6 and tubes == 1:
-        base_price += 1800
-    
-    # Ручки
-    handle_prices = {30: 0, 60: 700, 100: 1000}
-    handle_price = handle_prices.get(handle_size, 0) * doors
-    
-    # Ящики
-    drawers_price = 2000 if has_drawers else 0
-    
-    # Антресоль
-    antresol_price = 0
-    if has_antresol:
-        antresol_doors = doors
-        if doors in [3, 5]:
-            antresol_doors = 4
-        
-        antresol_price = ANTRESOL_PRICES.get(antresol_doors, 0)
-        
-        if door_type == 'Айша':
-            antresol_price += 500 * antresol_doors
-    
-    total_price = base_price + handle_price + drawers_price + antresol_price
-    
-    await state.update_data(total_price=total_price)
+    await state.update_data(total_price=prices['total'])
     
     # Формируем текст
     text = f"🛋 <b>Милан - Шкаф-купе {doors} дверей</b>\n\n"
-    text += f"📐 <b>Размеры:</b>\n{MILAN_SIZES[doors]}\n\n"
+    
+    # Размеры (с учётом антресоли)
+    sizes_text = get_sizes_text(doors, has_antresol)
+    text += f"📐 <b>Размеры:</b>\n{sizes_text}\n\n"
+    
     text += f"<b>Конфигурация:</b>\n"
-    text += f"├ Двери: {door_type}\n"
+    text += f"├ Двери: {door_type}"
+    if prices['aysha_extra'] != 0:
+        text += f" ({'+' if prices['aysha_extra'] > 0 else ''}{prices['aysha_extra']:,}₽)"
+    text += "\n"
+    
     if tubes:
-        text += f"├ Трубы: {tubes} шт\n"
+        text += f"├ Трубы: {tubes} шт"
+        if prices['tubes_extra'] > 0:
+            text += f" (+{prices['tubes_extra']:,}₽)"
+        text += "\n"
+    
     text += f"├ Ручки: {handle_size}см"
-    if handle_price > 0:
-        text += f" (+{handle_price:,}₽)"
-    text += f"\n├ Ящики: {'Да (+2,000₽)' if has_drawers else 'Нет'}\n"
-    text += f"└ Антресоль: {'Да (+' + f'{antresol_price:,}₽)' if has_antresol else 'Нет'}\n\n"
-    text += f"💰 <b>ЦЕНА: {total_price:,}₽</b>"
+    if prices['handle_price'] > 0:
+        text += f" (+{prices['handle_price']:,}₽)"
+    text += "\n"
+    
+    text += f"├ Ящики: {'Да' if has_drawers else 'Нет'}"
+    if has_drawers:
+        text += f" (+{prices['drawers_price']:,}₽)"
+    text += "\n"
+    
+    text += f"└ Антресоль: {'Да' if has_antresol else 'Нет'}"
+    if has_antresol:
+        text += f" (+{prices['antresol_price']:,}₽, высота +50см)"
+    text += "\n\n"
+    
+    text += f"💰 <b>ЦЕНА: {prices['total']:,}₽</b>"
     
     # Кнопки
     buttons = [
@@ -217,17 +261,17 @@ async def show_product_card(callback: CallbackQuery, state: FSMContext):
                 callback_data="milan_handle_30"
             ),
             InlineKeyboardButton(
-                text=f"{'✅' if handle_size == 60 else '🔧'} 60см (+)",
+                text=f"{'✅' if handle_size == 60 else '🔧'} 60см",
                 callback_data="milan_handle_60"
             ),
             InlineKeyboardButton(
-                text=f"{'✅' if handle_size == 100 else '🔧'} 100см (+)",
+                text=f"{'✅' if handle_size == 100 else '🔧'} 100см",
                 callback_data="milan_handle_100"
             ),
         ],
         [
             InlineKeyboardButton(
-                text=f"{'✅' if has_drawers else '➕'} Ящики (+2000₽)",
+                text=f"{'✅' if has_drawers else '➕'} Ящики +2000₽",
                 callback_data="milan_toggle_drawers"
             ),
             InlineKeyboardButton(
@@ -324,7 +368,7 @@ async def milan_toggle_antresol(callback: CallbackQuery, state: FSMContext):
     has_antresol = not data.get('has_antresol', False)
     await state.update_data(has_antresol=has_antresol)
     await show_product_card(callback, state)
-    await callback.answer(f"✅ Антресоль: {'добавлена' if has_antresol else 'убрана'}")
+    await callback.answer(f"✅ Антресоль: {'добавлена (+50см высота)' if has_antresol else 'убрана'}")
 
 
 @router.callback_query(F.data == "milan_add_cart")
