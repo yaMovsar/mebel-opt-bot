@@ -79,12 +79,22 @@ def calc_price(c):
     else:
         base = BASE_PRICES_ANT[doors] if antresol else BASE_PRICES[doors]
     
-    # Доплата за Айшу: -1000 + (кол-во Айша × 1000)
-    # Кол-во Айша = doors - mirrors (если тип Айша)
+    # Доплата за двери Айша: -1000 + (кол-во Айша × 1000)
+    # Кол-во Айша = doors - mirrors
     aysha_extra = 0
     if door_type == 'aysha':
-        aysha_doors = doors - mirrors  # сколько дверей Айша
+        aysha_doors = doors - mirrors
         aysha_extra = AYSHA_BASE + (aysha_doors * AYSHA_PER_DOOR)
+    
+    # Доплата за антресоль если Айша: +500₽ за каждую дверь антресоли
+    # (рамки не влияют - на антресоли всегда Айша если тип = Айша)
+    antresol_aysha_extra = 0
+    if antresol and door_type == 'aysha':
+        # Кол-во дверей антресоли = doors (3,5 дв → 4 дв антресоль)
+        antresol_doors = doors
+        if doors in [3, 5]:
+            antresol_doors = 4
+        antresol_aysha_extra = antresol_doors * 500
     
     # Ручки
     handle_extra = HANDLE_PRICES[h_size] * doors
@@ -92,7 +102,7 @@ def calc_price(c):
     # Ящики
     drawer_extra = DRAWERS_PRICE if drawers else 0
     
-    return int(base + aysha_extra + handle_extra + drawer_extra)
+    return int(base + aysha_extra + antresol_aysha_extra + handle_extra + drawer_extra)
 
 
 def get_photo(c):
